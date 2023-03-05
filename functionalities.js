@@ -31,17 +31,53 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sign = exports.verify = exports.getFinalHash = void 0;
+exports.sign = exports.verify = exports.getFinalHash = exports.generateProof = void 0;
 const keccak_1 = require("ethereum-cryptography/keccak");
 const secp256k1 = __importStar(require("ethereum-cryptography/secp256k1"));
 const utils_1 = require("ethereum-cryptography/utils");
+const MerkleTree_1 = __importDefault(require("./utils/MerkleTree"));
 /*
     signature format:
     to: address
     field : value
     we must be able to showcase only parts. therefore the final signature will be the merkled hash
 */
+function generateProof(message, hideFields, hideField) {
+    if (!message.to) {
+        throw new Error("A to field is neccessary");
+    }
+    hideFields.forEach((field) => {
+        if (!message[field]) {
+            throw Error("invalid hide field");
+        }
+        if (field == "to") {
+            throw Error("The to field cannot be hidden");
+        }
+    });
+    let finalObj = {};
+    const fields = Object.keys(message);
+    fields.sort();
+    const hides = [];
+    fields.forEach((field) => {
+        if (hideFields === null || hideFields === void 0 ? void 0 : hideFields.includes(field)) {
+            hides.push(`${field}:${message[field]}`);
+        }
+        else {
+            finalObj[field] = message[field];
+        }
+    });
+    if (!hideFields.includes(hideField)) {
+        throw new Error("Field is not hidden");
+    }
+    const merkleTree = new MerkleTree_1.default(hides);
+    const proof = merkleTree.getProofForMessage(`${hideField}:${message[hideField]}`);
+    return proof;
+}
+exports.generateProof = generateProof;
 function getFinalHash(message, hideFields) {
     if (!message.to) {
         throw new Error("A to field is neccessary");
@@ -57,34 +93,21 @@ function getFinalHash(message, hideFields) {
     let finalObj = {};
     const fields = Object.keys(message);
     fields.sort();
-    const hashes = [];
+    const hides = [];
     fields.forEach((field) => {
         if (hideFields === null || hideFields === void 0 ? void 0 : hideFields.includes(field)) {
-            hashes.push((0, utils_1.toHex)((0, keccak_1.keccak256)((0, utils_1.utf8ToBytes)(`${field}:${message[field]}`))));
+            hides.push(`${field}:${message[field]}`);
         }
         else {
             finalObj[field] = message[field];
         }
     });
-    let length = hashes.length;
-    while (length > 1) {
-        let odd = false;
-        if (length % 2) {
-            odd = true;
-            length--;
-        }
-        for (let i = 0; i < length; i += 2) {
-            hashes[i / 2] = (0, utils_1.toHex)((0, keccak_1.keccak256)((0, utils_1.utf8ToBytes)(hashes[i].concat(hashes[i + 1]))));
-        }
-        if (odd) {
-            hashes[length / 2] = hashes[length + 1];
-        }
-        length /= 2;
-    }
-    const merkleRoot = hashes[0];
-    if (merkleRoot) {
+    if (hides.length) {
+        const merkleTree = new MerkleTree_1.default(hides);
+        const merkleRoot = merkleTree.getRoot();
         finalObj.hiddenHash = merkleRoot;
     }
+    console.log(finalObj);
     return (0, utils_1.toHex)((0, keccak_1.keccak256)((0, utils_1.utf8ToBytes)(JSON.stringify(finalObj))));
 }
 exports.getFinalHash = getFinalHash;
@@ -104,7 +127,7 @@ function verify(storedHash, givenString, hiddenElement, hiddenProof) {
     let tempHash = (0, utils_1.toHex)((0, keccak_1.keccak256)((0, utils_1.utf8ToBytes)(hiddenElement)));
     for (let i = 0; i < hiddenProof.length; i++) {
         const currentProofElle = hiddenProof[i];
-        tempHash = (0, utils_1.toHex)((0, keccak_1.keccak256)((0, utils_1.utf8ToBytes)(currentProofElle.left ? currentProofElle.value.concat(tempHash) : tempHash.concat(currentProofElle.value))));
+        tempHash = (0, utils_1.toHex)((0, keccak_1.keccak256)((0, utils_1.utf8ToBytes)(currentProofElle.left ? currentProofElle.data.concat(tempHash) : tempHash.concat(currentProofElle.data))));
     }
     if (hiddenHash == tempHash) {
         return true;

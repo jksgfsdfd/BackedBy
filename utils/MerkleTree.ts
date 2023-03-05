@@ -1,22 +1,37 @@
 import { keccak256 } from "ethereum-cryptography/keccak";
-import { bytesToHex, toHex } from "ethereum-cryptography/utils";
+import {  toHex, utf8ToBytes } from "ethereum-cryptography/utils";
+
+interface proofObject{
+  data:string,
+  left:boolean
+}
 
 class MerkleTree {
-leaves:Uint8Array[];
+  leaves:string[];
 
-  constructor(leaves:string[]) {
-    this.leaves = leaves.map(Buffer.from).map(keccak256);
+  constructor(leaves?:string[]) {
+    if(leaves){
+      this.leaves = leaves.map((message)=>{
+        return toHex(keccak256(utf8ToBytes(message)))
+      })
+    }else{
+      this.leaves = []
+    }
+  }
+
+  addElement(message:string){
+    this.leaves.push(toHex(keccak256(utf8ToBytes(message))))
   }
 
   getRoot() {
-    return bytesToHex(this._getRoot(this.leaves));
+    return this.#getRoot(this.leaves);
   }
 
-  concat(left:Uint8Array,right:Uint8Array){
-    return keccak256(Buffer.concat([left,right]))
+  concat(left:string,right:string){
+    return toHex(keccak256(utf8ToBytes(left.concat(right))))
   }
 
-  getProof(index:number, layer = this.leaves, proof:any[] = []) : any {
+  getProof(index:number, layer = this.leaves, proof:proofObject[] = []) : proofObject[] {
     if (layer.length === 1) {
       return proof;
     }
@@ -33,10 +48,10 @@ leaves:Uint8Array[];
         newLayer.push(this.concat(left, right));
 
         if (i === index || i === index - 1) {
-          let isLeft = !(index % 2);
+          let isLeft = Boolean(index % 2);
           proof.push({
-            data: isLeft ? bytesToHex(right) : bytesToHex(left),
-            left: !isLeft,
+            data: isLeft ? left :right ,
+            left: isLeft,
           });
         }
       }
@@ -49,8 +64,18 @@ leaves:Uint8Array[];
     );
   }
 
+  getProofForMessage(message:string) : boolean | proofObject[] {
+    const hash = toHex(keccak256(utf8ToBytes(message)));
+    const index = this.leaves.indexOf(hash);
+    if( index == -1){
+      return false;
+    }else{
+      return this.getProof(index);
+    }
+  }
+
   // private function
-  _getRoot(leaves = this.leaves) :any {
+  #getRoot(leaves :string[]) :string {
     if (leaves.length === 1) {
       return leaves[0];
     }
@@ -68,8 +93,8 @@ leaves:Uint8Array[];
       }
     }
 
-    return this._getRoot(layer);
+    return this.#getRoot(layer);
   }
 }
 
-module.exports = MerkleTree;
+export default MerkleTree;
